@@ -33,7 +33,19 @@ pip install -r requirements.txt
 pytest
 ```
 
-Les commandes pour télécharger les données, entraîner et lancer l'API seront ajoutées au fil des étapes.
+Télécharger les données (RTE éCO2mix, Licence Ouverte v2.0, ~33 Mo, écrites dans `data/`, non versionné) :
+
+```bash
+python -m src.data
+```
+
+Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :
+
+```bash
+python -m ipykernel install --user --name conso-forecast --display-name "conso-forecast (.venv)"
+```
+
+Les commandes pour entraîner et lancer l'API seront ajoutées au fil des étapes.
 
 ## Structure du dépôt
 
