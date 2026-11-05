@@ -1,42 +1,53 @@
 # conso-forecast
 
-Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches et mise à disposition du modèle via une API conteneurisée.
+Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches (baselines, arbres boostés, SARIMA, réseau récurrent) et mise à disposition du meilleur modèle via une API conteneurisée.
 
-> **Statut : en cours.** Ce README sera complété à l'étape 11, uniquement avec des résultats réellement obtenus.
+> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Les modèles au-delà des baselines, l'API et Docker ne sont pas encore faits.
 
 ## Problème
 
-À rédiger : le problème métier, l'horizon de prévision, la métrique de décision.
+Prévoir la consommation nationale d'électricité pour chaque pas de 30 minutes du lendemain. Sur un réseau électrique, la production doit égaler la consommation à chaque instant : une bonne prévision permet de préparer la production à l'avance.
 
 ## Données
 
-À rédiger : source (RTE, éCO2mix), période, pas de temps, licence, traitement des anomalies.
+- **Source** : RTE, *Données éCO2mix nationales consolidées et définitives* (open data), [Licence Ouverte v2.0 (Etalab)](https://www.etalab.gouv.fr/wp-content/uploads/2017/04/ETALAB-Licence-Ouverte-v2.0.pdf).
+- **Période** : du 1er janvier 2012 au 31 août 2026 (heure de Paris), 257 134 créneaux de 30 minutes. Les données sont *définitives* jusqu'au 31 décembre 2025, *consolidées* ensuite.
+- **Traitement** : index en UTC ; 60 horodatages dupliqués au changement d'heure du printemps (moyennés) ; une heure manquante chaque automne (laissée vide, pas interpolée, pour éviter d'utiliser une valeur du futur). Voir `src/data.py` et `notebooks/01_exploration.ipynb`.
+- Les données brutes ne sont pas versionnées : `python -m src.data` les télécharge.
 
 ## Méthode
 
-À rédiger : baselines, modèles comparés, variables, validation en origine glissante.
+- **Test** : les 12 derniers mois (du 1er septembre 2025 au 31 août 2026). Pas de découpage aléatoire.
+- **Règle d'information** : la prévision du jour D n'utilise que les données jusqu'à la veille 23:30. Le code coupe l'historique avant d'appeler le modèle (`src/evaluate.py`), et un test vérifie qu'en remplaçant tout le futur par du bruit, la prévision ne change pas.
+- **Évaluation générique** : mêmes lignes, mêmes métriques (MAE, RMSE, MAPE) pour tous les modèles.
 
 ## Résultats
 
-À rédiger : tableau issu des exécutions réelles (modèle, MAE, RMSE, MAPE, moyenne et dispersion sur les plis).
+À ce stade, uniquement les baselines (`python -m src.run_baselines`). Scores sur 17 507 créneaux de la période de test :
+
+| Modèle | MAE (MW) | RMSE (MW) | MAPE (%) |
+|---|---|---|---|
+| Baseline : même heure la veille | 2 444 | 3 574 | 4,86 |
+| Baseline : même heure la semaine précédente | 3 445 | 5 066 | 6,42 |
+| Prévision J-1 de RTE (référence externe) | 1 388 | 1 747 | 2,74 |
+
+La prévision de RTE n'est pas directement comparable : elle est réalisée plus tôt, avec des informations que ce projet n'utilise pas forcément. Elle sert seulement de point de repère.
 
 ## Limites
 
-À rédiger : événements exceptionnels, dérive des données, ce qui manque pour la production.
+- Un seul découpage train/test pour l'instant ; une validation en origine glissante est prévue.
+- Les événements exceptionnels (canicule, crise énergétique, COVID) ne sont pas modélisés.
+- Les causes exactes de certaines anomalies des données (doublons, heure manquante) ne sont pas documentées par la source.
 
 ## Installation et lancement
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate        # Windows : .venv\Scripts\activate
 pip install -r requirements.txt
 pytest
-```
-
-Télécharger les données (RTE éCO2mix, Licence Ouverte v2.0, ~33 Mo, écrites dans `data/`, non versionné) :
-
-```bash
-python -m src.data
+python -m src.data               # télécharge les données (~33 Mo dans data/)
+python -m src.run_baselines      # affiche le tableau des baselines
 ```
 
 Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :
@@ -45,7 +56,7 @@ Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :
 python -m ipykernel install --user --name conso-forecast --display-name "conso-forecast (.venv)"
 ```
 
-Les commandes pour entraîner et lancer l'API seront ajoutées au fil des étapes.
+Testé avec Python 3.12 sur Windows 11.
 
 ## Structure du dépôt
 
@@ -53,12 +64,9 @@ Les commandes pour entraîner et lancer l'API seront ajoutées au fil des étape
 conso-forecast/
 ├── data/            (non versionné : voir src/data.py pour le téléchargement)
 ├── notebooks/       (exploration)
-├── src/             (données, variables, modèles, évaluation)
-├── api/             (FastAPI)
+├── src/             (données, métriques, baselines, évaluation)
+├── api/             (FastAPI, à venir)
 ├── tests/
-├── docs/            (métier, journal de bord, préparation d'entretien)
 ├── models/          (modèles sauvegardés, non versionnés)
-├── CLAUDE.md
-├── PLAN.md
-└── README.md
+└── requirements.txt
 ```

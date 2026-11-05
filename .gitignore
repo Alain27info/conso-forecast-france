@@ -16,3 +16,8 @@ models/*
 
 # Archive de départ du projet
 conso-forecast.tar.gz
+
+# Fichiers personnels de travail (non publiés)
+docs/
+CLAUDE.md
+PLAN.md
