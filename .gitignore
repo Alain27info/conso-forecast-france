@@ -13,3 +13,6 @@ models/*
 *.parquet
 *.pt
 *.joblib
+
+# Archive de départ du projet
+conso-forecast.tar.gz
