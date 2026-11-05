@@ -42,10 +42,17 @@ def compare(y_true: pd.Series, predictions: dict[str, pd.Series]) -> pd.DataFram
     return pd.DataFrame(rows).T
 
 
+def mae_by(
+    y_true: pd.Series, predictions: dict[str, pd.Series], group_of: Callable[[pd.DatetimeIndex], pd.Index]
+) -> pd.DataFrame:
+    """MAE per group for each model, on the same rows; `group_of` maps the Paris-time index to group labels."""
+    frame = pd.concat([y_true.rename("truth"), *[p.rename(k) for k, p in predictions.items()]], axis=1).dropna()
+    groups = group_of(frame.index.tz_convert(TZ))
+    return pd.DataFrame(
+        {name: (frame["truth"] - frame[name]).abs().groupby(groups).mean() for name in predictions}
+    )
+
+
 def mae_by_weekday(y_true: pd.Series, predictions: dict[str, pd.Series]) -> pd.DataFrame:
     """MAE per Paris weekday (0 = Monday) for each model, on the same rows."""
-    frame = pd.concat([y_true.rename("truth"), *[p.rename(k) for k, p in predictions.items()]], axis=1).dropna()
-    weekday = frame.index.tz_convert(TZ).day_of_week
-    return pd.DataFrame(
-        {name: (frame["truth"] - frame[name]).abs().groupby(weekday).mean() for name in predictions}
-    )
+    return mae_by(y_true, predictions, lambda local: local.day_of_week)

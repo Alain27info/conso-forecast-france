@@ -2,7 +2,7 @@
 
 Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches (baselines, arbres boostés, SARIMA, réseau récurrent) et mise à disposition du meilleur modèle via une API conteneurisée.
 
-> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Les autres modèles (SARIMA, réseau récurrent), la validation en origine glissante, l'API et Docker ne sont pas encore faits.
+> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Les autres modèles (SARIMA, réseau récurrent), l'API et Docker ne sont pas encore faits.
 
 ## Problème
 
@@ -17,7 +17,7 @@ Prévoir la consommation nationale d'électricité pour chaque pas de 30 minutes
 
 ## Méthode
 
-- **Test** : les 12 derniers mois (du 1er septembre 2025 au 31 août 2026). Pas de découpage aléatoire.
+- **Test** : les 12 derniers mois (du 1er septembre 2025 au 31 août 2026), puis validation en origine glissante sur 5 années de test successives (voir Résultats). Pas de découpage aléatoire.
 - **Règle d'information** : la prévision du jour D n'utilise que les données jusqu'à la veille 23:30. Le code coupe l'historique avant d'appeler le modèle (`src/evaluate.py`), et un test vérifie qu'en remplaçant tout le futur par du bruit, la prévision ne change pas.
 - **Variables** (`src/features.py`) : calendrier (heure, jour de la semaine, mois, jours fériés calculés sans bibliothèque) et retards de consommation d'**au moins un jour** (1, 2, 7, 14 jours, moyennes de la veille et des 7 jours précédents). Aucun retard plus court : il ne serait pas connu à J+1. Des tests vérifient que les variables du jour D ne changent pas si l'on remplace le futur par du bruit.
 - **Évaluation générique** : mêmes lignes, mêmes métriques (MAE, RMSE, MAPE) pour tous les modèles.
@@ -39,10 +39,29 @@ Baselines (`python -m src.run_baselines`) et gradient boosting (`python -m src.r
 - Le nombre d'arbres (517) et la fonction de perte sont choisis sur une période de validation de 12 mois précédant le test ; le test ne sert à aucun réglage.
 - **La prévision de RTE n'est pas directement comparable** : elle est réalisée plus tôt, avec des informations que ce projet n'utilise pas forcément. Elle sert seulement de point de repère, et l'écart de MAE ne prouve pas que le modèle fait mieux.
 
+### Validation en origine glissante
+
+`python -m src.run_rolling` (~12 min). Cinq plis : chaque pli teste une année (1er septembre – 31 août) en s'entraînant sur tout le passé avant cette année ; la perte et le nombre d'arbres sont réglés sur les 12 mois précédant le test du pli. MAE en MW :
+
+| Pli (année de test) | Baseline veille | Gradient boosting | GB, écart à la veille | RTE J-1 (référence) |
+|---|---|---|---|---|
+| 2021-22 | 2 737 | 1 211 | 1 162 | 967 |
+| 2022-23 | 2 575 | 1 209 | 1 145 | 1 191 |
+| 2023-24 | 2 514 | 1 292 | 1 186 | 1 369 |
+| 2024-25 | 2 536 | 1 343 | 1 243 | 1 310 |
+| 2025-26 | 2 444 | 1 318 | 1 288 | 1 388 |
+| **Moyenne** | 2 561 | 1 275 | **1 205** | 1 245 |
+| Écart-type | 109 | 62 | 60 | 173 |
+
+- Le gradient boosting bat la baseline « veille » sur les 5 plis (MAE −46 % à −56 % selon le pli, −50 % en moyenne). Le gain diminue d'un pli à l'autre (−56 % puis −46 %) : la MAE de la baseline baisse au fil des années alors que celle du modèle tend à monter ; la cause n'est pas étudiée. Le léger désavantage du mercredi et du jeudi observé sur le dernier pli ne se retrouve pas sur les 4 autres plis.
+- « GB, écart à la veille » prédit y − (consommation de la veille) au lieu de y. Sa MAE est plus basse sur les 5 plis (−5,5 % en moyenne par rapport au gradient boosting classique) ; il a aussi la MAE de validation la plus basse sur les 5 plis, donc il aurait été choisi sans regarder les tests. L'idée est venue après avoir regardé le dernier pli seulement.
+- **Face à RTE, le résultat dépend du pli** : RTE est meilleur en MAE sur 2021-22 et, pour le gradient boosting classique, aussi sur 2022-23 et 2024-25 ; il est meilleur en RMSE sur les 5 plis. Le seul test de l'an dernier (1 318 contre 1 388) était donc la fenêtre la plus favorable ; la comparaison reste non équivalente.
+- Le modèle surestime en moyenne sur chaque pli (+60 à +266 MW pour le gradient boosting classique, la baseline « veille » est à ±20 MW). Pour le gradient boosting classique, les erreurs sont plus fortes l'hiver (MAE 2 092 MW en hiver contre 729 MW en été) et en journée (1 300 à 1 460 MW entre 7h et 18h, contre environ 1 040 MW la nuit) ; les pires journées (erreur de 6 000 à 9 000 MW) sont surtout en hiver, avec des surestimations comme des sous-estimations. Leurs causes n'ont pas été vérifiées.
+
 ## Limites
 
-- Un seul découpage train/test pour l'instant ; une validation en origine glissante est prévue.
-- Pas de météo : la température, qui influence fortement la consommation (chauffage), n'est pas utilisée.
+- Pas de météo : la température, qui influence fortement la consommation (chauffage), n'est pas utilisée. Les erreurs sont plus fortes l'hiver, ce qui est compatible avec un effet du chauffage, mais ce lien n'est pas démontré ici.
+- Le nombre d'arbres est plafonné à 600 lors du réglage, et ce plafond est atteint (ou presque) pour le gradient boosting classique sur 3 des 5 plis. Contrôle sur un seul pli (2021-22, MAE de validation uniquement) : avec un plafond de 1 500 arbres, la MAE de validation passe de 1 316 à 1 306 MW. L'effet paraît faible mais n'a pas été mesuré sur les autres plis.
 - Les événements exceptionnels (canicule, crise énergétique, COVID) ne sont pas modélisés.
 - Les causes exactes de certaines anomalies des données (doublons, heure manquante) ne sont pas documentées par la source.
 
@@ -56,6 +75,7 @@ pytest
 python -m src.data               # télécharge les données (~33 Mo dans data/)
 python -m src.run_baselines      # affiche le tableau des baselines
 python -m src.run_gbm            # entraîne le gradient boosting et le compare (~2 min)
+python -m src.run_rolling        # validation en origine glissante, 5 plis (~12 min)
 ```
 
 Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :

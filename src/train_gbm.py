@@ -33,9 +33,9 @@ def select_iterations(X_tr, y_tr, X_val, y_val, loss: str, max_iter: int = 600) 
     return best + 1, float(curve[best])
 
 
-def tune(X_train, y_train, columns: list[str]) -> tuple[str, int, float]:
-    """Choose (loss, number of trees) on the temporal validation split of the training data."""
-    is_val = y_train.index >= VAL_START
+def tune(X_train, y_train, columns: list[str], val_start: pd.Timestamp = VAL_START) -> tuple[str, int, float]:
+    """Choose (loss, number of trees) on the temporal validation split (rows from `val_start` on)."""
+    is_val = y_train.index >= val_start
     X_tr, y_tr = X_train.loc[~is_val, columns], y_train[~is_val]
     X_val, y_val = X_train.loc[is_val, columns], y_train[is_val]
     results = [(loss, *select_iterations(X_tr, y_tr, X_val, y_val, loss)) for loss in LOSSES]
@@ -47,11 +47,17 @@ def fit_final(X_train, y_train, columns: list[str], loss: str, n_trees: int) -> 
     return new_model(loss, n_trees).fit(X_train[columns], y_train)
 
 
-def gbm_forecaster(model: HistGradientBoostingRegressor, columns: list[str]):
-    """Wrap a fitted model as a forecaster (history, target_index) -> predictions, as in src/evaluate.py."""
+def gbm_forecaster(model: HistGradientBoostingRegressor, columns: list[str], residual: bool = False):
+    """Wrap a fitted model as a forecaster (history, target_index) -> predictions, as in src/evaluate.py.
+
+    If `residual` is True the model predicts y - lag_1d, so the day-before value is added back.
+    """
 
     def forecast(history: pd.Series, target_index: pd.DatetimeIndex) -> pd.Series:
-        features = build_features(history, target_index)[columns]
-        return pd.Series(model.predict(features), index=target_index)
+        features = build_features(history, target_index)
+        prediction = model.predict(features[columns])
+        if residual:
+            prediction = prediction + features["lag_1d"].to_numpy()
+        return pd.Series(prediction, index=target_index)
 
     return forecast
