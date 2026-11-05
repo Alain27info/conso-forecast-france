@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Données et modèles : non versionnés
+data/*
+!data/.gitkeep
+models/*
+!models/.gitkeep
+*.csv
+*.parquet
+*.pt
+*.joblib
