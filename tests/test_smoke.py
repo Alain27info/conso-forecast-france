@@ -1,3 +1,3 @@
 def test_smoke():
-    """Vérifie que l'environnement de test fonctionne (jour 1)."""
+    """Check that the test environment works (step 0)."""
     assert True

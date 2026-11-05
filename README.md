@@ -2,7 +2,7 @@
 
 Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches et mise à disposition du modèle via une API conteneurisée.
 
-> **Statut : en cours.** Ce README sera complété à l'étape 10, uniquement avec des résultats réellement obtenus.
+> **Statut : en cours.** Ce README sera complété à l'étape 11, uniquement avec des résultats réellement obtenus.
 
 ## Problème
 
