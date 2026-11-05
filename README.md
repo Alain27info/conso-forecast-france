@@ -2,7 +2,7 @@
 
 Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches (baselines, arbres boostés, SARIMA, réseau récurrent) et mise à disposition du meilleur modèle via une API conteneurisée.
 
-> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Les modèles au-delà des baselines, l'API et Docker ne sont pas encore faits.
+> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Les autres modèles (SARIMA, réseau récurrent), la validation en origine glissante, l'API et Docker ne sont pas encore faits.
 
 ## Problème
 
@@ -24,19 +24,25 @@ Prévoir la consommation nationale d'électricité pour chaque pas de 30 minutes
 
 ## Résultats
 
-À ce stade, uniquement les baselines (`python -m src.run_baselines`). Scores sur 17 507 créneaux de la période de test :
+Baselines (`python -m src.run_baselines`) et gradient boosting (`python -m src.run_gbm`). Scores sur 17 507 créneaux de la période de test (1er septembre 2025 – 31 août 2026) :
 
 | Modèle | MAE (MW) | RMSE (MW) | MAPE (%) |
 |---|---|---|---|
 | Baseline : même heure la veille | 2 444 | 3 574 | 4,86 |
 | Baseline : même heure la semaine précédente | 3 445 | 5 066 | 6,42 |
+| Gradient boosting, calendrier seul | 3 953 | 5 157 | 7,56 |
+| **Gradient boosting, calendrier + retards** | **1 318** | 1 873 | **2,46** |
 | Prévision J-1 de RTE (référence externe) | 1 388 | 1 747 | 2,74 |
 
-La prévision de RTE n'est pas directement comparable : elle est réalisée plus tôt, avec des informations que ce projet n'utilise pas forcément. Elle sert seulement de point de repère.
+- Le gradient boosting réduit la MAE de 46 % par rapport à la baseline « veille ». Le gain vient surtout du lundi (MAE 5 306 → 1 668 MW) et du samedi (4 190 → 1 333 MW) ; le mercredi et le jeudi, la baseline « veille » est légèrement meilleure que le modèle.
+- Sans les retards de consommation, le modèle est moins bon que la baseline la plus simple : l'information utile est dans la consommation récente.
+- Le nombre d'arbres (517) et la fonction de perte sont choisis sur une période de validation de 12 mois précédant le test ; le test ne sert à aucun réglage.
+- **La prévision de RTE n'est pas directement comparable** : elle est réalisée plus tôt, avec des informations que ce projet n'utilise pas forcément. Elle sert seulement de point de repère, et l'écart de MAE ne prouve pas que le modèle fait mieux.
 
 ## Limites
 
 - Un seul découpage train/test pour l'instant ; une validation en origine glissante est prévue.
+- Pas de météo : la température, qui influence fortement la consommation (chauffage), n'est pas utilisée.
 - Les événements exceptionnels (canicule, crise énergétique, COVID) ne sont pas modélisés.
 - Les causes exactes de certaines anomalies des données (doublons, heure manquante) ne sont pas documentées par la source.
 
@@ -49,6 +55,7 @@ pip install -r requirements.txt
 pytest
 python -m src.data               # télécharge les données (~33 Mo dans data/)
 python -m src.run_baselines      # affiche le tableau des baselines
+python -m src.run_gbm            # entraîne le gradient boosting et le compare (~2 min)
 ```
 
 Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :
