@@ -19,6 +19,7 @@ Prévoir la consommation nationale d'électricité pour chaque pas de 30 minutes
 
 - **Test** : les 12 derniers mois (du 1er septembre 2025 au 31 août 2026). Pas de découpage aléatoire.
 - **Règle d'information** : la prévision du jour D n'utilise que les données jusqu'à la veille 23:30. Le code coupe l'historique avant d'appeler le modèle (`src/evaluate.py`), et un test vérifie qu'en remplaçant tout le futur par du bruit, la prévision ne change pas.
+- **Variables** (`src/features.py`) : calendrier (heure, jour de la semaine, mois, jours fériés calculés sans bibliothèque) et retards de consommation d'**au moins un jour** (1, 2, 7, 14 jours, moyennes de la veille et des 7 jours précédents). Aucun retard plus court : il ne serait pas connu à J+1. Des tests vérifient que les variables du jour D ne changent pas si l'on remplace le futur par du bruit.
 - **Évaluation générique** : mêmes lignes, mêmes métriques (MAE, RMSE, MAPE) pour tous les modèles.
 
 ## Résultats
@@ -64,7 +65,7 @@ Testé avec Python 3.12 sur Windows 11.
 conso-forecast/
 ├── data/            (non versionné : voir src/data.py pour le téléchargement)
 ├── notebooks/       (exploration)
-├── src/             (données, métriques, baselines, évaluation)
+├── src/             (données, variables, métriques, baselines, évaluation)
 ├── api/             (FastAPI, à venir)
 ├── tests/
 ├── models/          (modèles sauvegardés, non versionnés)
