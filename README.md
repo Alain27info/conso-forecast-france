@@ -2,7 +2,7 @@
 
 Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches (baselines, arbres boostés, SARIMA, réseau récurrent) et mise à disposition du meilleur modèle via une API conteneurisée.
 
-> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. L'API et Docker ne sont pas encore faits.
+> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Docker n'est pas encore fait.
 
 ## Problème
 
@@ -97,6 +97,27 @@ Baselines (`python -m src.run_baselines`) et gradient boosting (`python -m src.r
 - Erreur du GRU « écart » (moyenne des 3 prédictions) par heure : environ 240 MW à minuit (juste après la dernière observation) et jusqu'à ~1 000 MW en fin d'après-midi ; par saison : 1 091 MW en hiver contre 448 MW en été.
 - Limites propres au GRU : le réglage se limite au nombre d'époques (plafond de 40 atteint dans 10 des 30 entraînements) ; architecture et hyperparamètres (64 unités, pas d'apprentissage 10⁻³, fenêtre de 14 jours) fixés a priori, sans recherche.
 
+## Modèle final et API
+
+**Choix du modèle final.** Le modèle retenu est le **GRU « écart à la veille »**, moyenne de 3 graines. Le critère est la MAE de **validation** (les 12 mois avant chaque pli), pas celle des plis de test : sur les 5 plis, le classement de validation est le même, GRU « écart » < GRU direct < gradient boosting « écart » < gradient boosting (par exemple sur le dernier pli : 743, 798, 1 236 et 1 276 MW). Ce modèle a une MAE moyenne de 722 MW sur les 5 plis de test (moyenne des 3 prédictions). Avant la mise à disposition, il est ré-entraîné sur tout le passé disponible (jusqu'au 31 août 2026), avec le nombre d'époques choisi sur les 12 derniers mois : `python -m src.train_final` (~4 min, écrit `models/gru_final.pt`, non versionné).
+
+**API** (FastAPI) :
+
+```bash
+python -m src.train_final                 # une fois : écrit models/gru_final.pt
+uvicorn api.main:app                      # lance le serveur (modèle chargé une seule fois au démarrage)
+python -m src.example_request             # écrit data/example_request.json à partir des vraies données
+curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -d @data/example_request.json
+```
+
+- `GET /health` : état du service, version du modèle, date de fin d'entraînement.
+- `POST /predict` : le client envoie `date` (le jour à prévoir, heure de Paris) et `history` (consommation par pas de 30 minutes, avec fuseau horaire, au moins 14 jours jusqu'à la veille). L'API renvoie les valeurs prévues du jour (48, ou 46 et 50 les jours de changement d'heure), horodatées en UTC.
+- L'API **refuse** (erreur 422, avec un message) un historique qui contient des données du jour à prévoir ou d'après (règle d'information), qui est trop court ou trop incomplet (moins de 95 % de valeurs sur les 14 jours), sans fuseau horaire, hors de la grille de 30 minutes ou avec des valeurs hors de ]0 ; 200 000] MW.
+- Le service utilise le même code que l'évaluation (`src/gru.py`) et le modèle est sauvegardé avec sa normalisation : un test vérifie que l'API et le code d'évaluation donnent les mêmes valeurs.
+- Essai réel en local (une requête de 768 observations) : réponse en environ 0,15 s.
+
+**Ce qui manque pour une vraie production** : surveillance de la qualité des prévisions (comparaison avec la consommation réalisée) et des données reçues, ré-entraînement planifié, détection de dérive (le niveau de consommation évolue), gestion des données **temps réel** de RTE qui peuvent différer des données définitives sur lesquelles le modèle est entraîné, authentification, limitation du débit, journalisation structurée, versionnement des modèles. Aucun de ces points n'est fait ici.
+
 ## Limites
 
 - Pas de météo : la température, qui influence fortement la consommation (chauffage), n'est pas utilisée. Les erreurs sont plus fortes l'hiver, ce qui est compatible avec un effet du chauffage, mais ce lien n'est pas démontré ici.
@@ -134,8 +155,8 @@ Testé avec Python 3.12 sur Windows 11.
 conso-forecast/
 ├── data/            (non versionné : voir src/data.py pour le téléchargement)
 ├── notebooks/       (exploration)
-├── src/             (données, variables, métriques, baselines, évaluation)
-├── api/             (FastAPI, à venir)
+├── src/             (données, variables, métriques, baselines, modèles, évaluation, service de prévision)
+├── api/             (FastAPI : /health et /predict)
 ├── tests/
 ├── models/          (modèles sauvegardés, non versionnés)
 └── requirements.txt
