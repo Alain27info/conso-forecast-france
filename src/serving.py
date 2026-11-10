@@ -38,6 +38,13 @@ def save_artifact(path: Path, members: list[dict], scaler: Scaler, version: str,
     }, path)
 
 
+def day_targets(day: dt.date) -> pd.DatetimeIndex:
+    """UTC half-hours of the Paris local day `day`: 48 points, 46 or 50 on the days of a clock change."""
+    start = pd.Timestamp(day).tz_localize(TZ)
+    end = pd.Timestamp(day + dt.timedelta(days=1)).tz_localize(TZ)
+    return pd.date_range(start.tz_convert("UTC"), end.tz_convert("UTC"), freq=STEP, inclusive="left")
+
+
 class Predictor:
     """An ensemble of trained GRUs and the scaler they were trained with."""
 
@@ -47,9 +54,8 @@ class Predictor:
     def predict(self, history: pd.Series, day: dt.date) -> pd.Series:
         """Half-hourly forecast (UTC index) of local day `day`, from a history that ends before that day."""
         day_start = pd.Timestamp(day).tz_localize(TZ)
-        next_start = pd.Timestamp(day + dt.timedelta(days=1)).tz_localize(TZ)
         history = check_history(history, day_start)
-        targets = pd.date_range(day_start.tz_convert("UTC"), next_start.tz_convert("UTC"), freq=STEP, inclusive="left")
+        targets = day_targets(day)
         forecasts = [gru_forecaster(model, self.scaler)(history, targets) for model in self.models]
         return pd.concat(forecasts, axis=1).mean(axis=1)
 

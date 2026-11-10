@@ -4,6 +4,7 @@ Usage (from the project root):
     python -m src.example_request            # writes data/example_request.json
     curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -d @data/example_request.json
 """
+import datetime as dt
 import json
 from pathlib import Path
 
@@ -16,18 +17,22 @@ OUTPUT = Path("data/example_request.json")
 HISTORY_DAYS = 16
 
 
+def build_request(series: pd.Series, day: dt.date, history_days: int = HISTORY_DAYS) -> dict:
+    """The /predict request body for Paris local day `day`: the `history_days` days before it, nothing from `day`."""
+    end = pd.Timestamp(day).tz_localize(TZ)
+    history = series[(series.index >= end - pd.Timedelta(days=history_days)) & (series.index < end)]
+    return {
+        "date": day.isoformat(),
+        "history": [{"timestamp": t.isoformat(), "consumption_mw": None if pd.isna(v) else round(float(v), 1)}
+                    for t, v in history.items()],
+    }
+
+
 def main() -> None:
     """Build the request for the first day after the end of the data."""
     series = to_half_hourly(load_raw())["consommation"]
     last = series.dropna().index[-1].tz_convert(TZ).tz_localize(None)
-    day = last.normalize() + pd.Timedelta(days=1)
-    start = (day - pd.Timedelta(days=HISTORY_DAYS)).tz_localize(TZ)
-    history = series[(series.index >= start) & (series.index < day.tz_localize(TZ))]
-    payload = {
-        "date": day.date().isoformat(),
-        "history": [{"timestamp": t.isoformat(), "consumption_mw": None if pd.isna(v) else round(float(v), 1)}
-                    for t, v in history.items()],
-    }
+    payload = build_request(series, (last.normalize() + pd.Timedelta(days=1)).date())
     OUTPUT.write_text(json.dumps(payload))
     print(f"wrote {OUTPUT}: date {payload['date']}, {len(payload['history'])} observations")
 

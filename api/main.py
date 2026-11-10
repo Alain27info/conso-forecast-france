@@ -15,11 +15,15 @@ from typing import Annotated
 import numpy as np
 import pandas as pd
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import AwareDatetime, BaseModel, Field
 
+from api.demo import DemoData, build_router
 from src.serving import MAX_MW, InvalidHistory, load_artifact
 
 logger = logging.getLogger("api")
+STATIC_DIR = Path(__file__).parent / "static"
 MAX_OBSERVATIONS = 5000        # about 100 days of half-hourly data: protects the service from huge payloads
 
 Megawatts = Annotated[float, Field(gt=0, le=MAX_MW)]
@@ -56,7 +60,7 @@ class HealthResponse(BaseModel):
     trained_until: str
 
 
-def create_app(model_path: Path | None = None) -> FastAPI:
+def create_app(model_path: Path | None = None, demo_data: DemoData | None = None) -> FastAPI:
     """Build the application; the model file is read when the server starts."""
     path = model_path or Path(os.environ.get("MODEL_PATH", "models/gru_final.pt"))
 
@@ -67,6 +71,13 @@ def create_app(model_path: Path | None = None) -> FastAPI:
         yield
 
     app = FastAPI(title="conso-forecast", version="1.0", lifespan=lifespan)
+    app.state.demo = demo_data or DemoData()
+    app.include_router(build_router())
+    app.mount("/static", StaticFiles(directory=STATIC_DIR, check_dir=False), name="static")
+
+    @app.get("/", include_in_schema=False)
+    def home() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
 
     @app.get("/health", response_model=HealthResponse)
     def health(request: Request) -> HealthResponse:

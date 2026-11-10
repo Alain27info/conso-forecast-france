@@ -21,3 +21,6 @@ conso-forecast.tar.gz
 docs/
 CLAUDE.md
 PLAN.md
+
+# Fichiers de travail du navigateur de test
+.playwright-mcp/

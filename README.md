@@ -116,6 +116,24 @@ curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -
 - Le service utilise le même code que l'évaluation (`src/gru.py`) et le modèle est sauvegardé avec sa normalisation : un test vérifie que l'API et le code d'évaluation donnent les mêmes valeurs.
 - Essai réel en local (une requête de 768 observations) : réponse en environ 0,15 s.
 
+**Page web de démonstration.** Le serveur sert aussi une page à la racine, http://127.0.0.1:8000/ (la documentation interactive de l'API reste sur `/docs`) :
+
+![Haut de la page : chiffres clés et panneau de prévision](assets/dashboard-top.png)
+
+- **« Essayer l'API »** : on choisit un jour, la page construit une vraie requête `POST /predict` (16 jours d'historique jusqu'à la veille 23h30), l'envoie au modèle et trace la réponse avec la consommation réelle, la prévision J-1 de RTE et la baseline « veille » quand elles existent. Elle affiche l'erreur du jour de chaque courbe, la latence mesurée, la requête et la réponse brutes, et un bouton qui envoie volontairement une requête qui viole la règle d'information pour montrer le refus (HTTP 422).
+- **Exemples proposés** : le lendemain de la fin des données (une vraie prévision, sans réalité connue), le jour typique du backtest (erreur médiane), les trois pires jours du backtest (calculés, pas choisis à la main), les deux changements d'heure (23 h et 25 h) et quelques jours fériés.
+- **Un avertissement s'affiche** pour tout jour passé : le modèle final a été entraîné sur tout le passé, donc l'erreur de ces jours-là ne mesure pas sa performance. La seule mesure honnête est le backtest.
+
+![Panneau de prévision sur un jour typique du backtest (4 janvier 2023)](assets/dashboard-forecast.png)
+
+- **Résultats du backtest** : MAE par année de test, erreurs par heure, par jour de la semaine et par saison, « d'où vient l'avance du GRU ? » (le diagnostic d'information égale), tableau complet de tous les modèles et section « ce que ces chiffres ne disent pas ». Chaque graphique a une vue tableau et une info-bulle ; les couleurs sont validées pour les daltoniens (script de validation de palette), avec un mode sombre.
+- Les chiffres viennent de `api/static/results.json`, généré par `python -m src.make_dashboard_data` à partir des prévisions déjà calculées (métriques agrégées uniquement, aucune donnée brute). Tous les modèles y sont notés sur les mêmes 87 585 créneaux, d'où des écarts de 1 MW au plus avec les tableaux plus haut.
+- La page a besoin des données locales (`python -m src.data`) pour son panneau de prévision ; sans elles, elle l'indique et le reste (résultats, API) continue de fonctionner. Les chiffres et les graphiques ne dépendent ni d'une connexion externe ni d'une bibliothèque JavaScript tierce.
+
+![Section des résultats du backtest](assets/dashboard-results.png)
+
+**Un exemple à connaître** : le 12 janvier 2026 est le 3e pire jour du backtest sur 1 826 (le GRU surestime de 4 014 MW en moyenne ce jour-là, la prévision de RTE se trompe de 821 MW). La cause n'est pas vérifiée ; la météo, absente du modèle, est une piste plausible mais non testée.
+
 **Ce qui manque pour une vraie production** : surveillance de la qualité des prévisions (comparaison avec la consommation réalisée) et des données reçues, ré-entraînement planifié, détection de dérive (le niveau de consommation évolue), gestion des données **temps réel** de RTE qui peuvent différer des données définitives sur lesquelles le modèle est entraîné, authentification, limitation du débit, journalisation structurée, versionnement des modèles. Aucun de ces points n'est fait ici.
 
 ## Limites
@@ -139,6 +157,7 @@ python -m src.run_rolling        # validation en origine glissante, 5 plis (~12 
 python -m src.run_sarima         # SARIMA sur les mêmes plis (~13 min), après run_rolling
 python -m src.run_gru            # réseau récurrent sur les mêmes plis (~8 min), après run_rolling
 python -m src.run_gbm_profile    # diagnostic : gradient boosting avec le profil de la veille, après run_gru
+python -m src.make_dashboard_data  # régénère api/static/results.json pour la page web, après les quatre scripts ci-dessus
 ```
 
 Pour ouvrir le notebook dans Jupyter, enregistrer d'abord le noyau du projet :
@@ -156,7 +175,8 @@ conso-forecast/
 ├── data/            (non versionné : voir src/data.py pour le téléchargement)
 ├── notebooks/       (exploration)
 ├── src/             (données, variables, métriques, baselines, modèles, évaluation, service de prévision)
-├── api/             (FastAPI : /health et /predict)
+├── api/             (FastAPI : /health, /predict ; page web de démonstration dans api/static/)
+├── assets/          (captures d'écran de la page web)
 ├── tests/
 ├── models/          (modèles sauvegardés, non versionnés)
 └── requirements.txt

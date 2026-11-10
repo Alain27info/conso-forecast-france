@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>conso-forecast · Prévision de la consommation électrique</title>
+  <meta name="description" content="Prévision à J+1 de la consommation électrique française : baselines, gradient boosting, SARIMA et GRU comparés sur cinq années de test, modèle final exposé par une API.">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232a78d6'/%3E%3Cpath d='M5 21l6-7 5 4 6-9 5 6' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="topbar">
+  <div class="wrap">
+    <div class="brand"><span class="mark"></span>conso-forecast</div>
+    <nav class="nav" aria-label="Sections">
+      <a href="#essayer">Essayer l'API</a>
+      <a href="#resultats">Résultats</a>
+      <a href="#limites">Limites</a>
+      <a href="#architecture">Architecture</a>
+    </nav>
+    <div class="spacer"></div>
+    <span class="pill" id="status"><span class="dot" id="status-dot"></span><span id="status-text">Connexion à l'API…</span></span>
+    <button class="icon-btn" id="theme" type="button" aria-label="Changer de thème" title="Changer de thème">◐</button>
+  </div>
+</header>
+
+<main class="wrap">
+  <div class="hero">
+    <div class="eyebrow">Projet vitrine · Data science &amp; ML engineering</div>
+    <h1>Prévoir la consommation électrique française, la veille pour le lendemain</h1>
+    <p class="lede">Consommation nationale au pas de 30 minutes (données ouvertes RTE éCO2mix). Des baselines, un gradient boosting, un SARIMA et un réseau récurrent sont comparés sur cinq années de test ; le meilleur modèle est exposé par l'API que vous pouvez essayer ci-dessous.</p>
+    <div class="tiles" id="kpis" aria-live="polite">
+      <div class="tile hero-figure"><div class="label">Erreur moyenne du modèle déployé</div><div class="value">—</div><div class="sub">chargement…</div></div>
+    </div>
+  </div>
+
+  <section id="essayer">
+    <h2>Essayer l'API</h2>
+    <p class="section-lede">Choisissez un jour : la page construit une vraie requête <code>POST /predict</code> (16 jours d'historique jusqu'à la veille à 23h30), l'envoie au modèle et trace sa réponse.</p>
+
+    <div class="notice err" id="demo-missing" hidden><span class="ico">!</span><span>Les données locales sont absentes : la démonstration est désactivée. Téléchargez-les avec <code>python -m src.data</code>, puis rechargez la page.</span></div>
+
+    <div class="filters">
+      <label class="field">Jour à prévoir
+        <input type="date" id="date">
+      </label>
+      <label class="field">Exemples
+        <select id="examples"><option value="">Choisir un exemple…</option></select>
+      </label>
+      <button class="btn primary" id="run" type="button" style="align-self:flex-end">Prévoir ce jour</button>
+      <button class="btn ghost" id="prev" type="button" style="align-self:flex-end" aria-label="Jour précédent">← Veille</button>
+      <button class="btn ghost" id="next" type="button" style="align-self:flex-end" aria-label="Jour suivant">Lendemain →</button>
+    </div>
+
+    <div class="notice warn" id="insample" hidden><span class="ico">⚠</span><span>Ce jour fait partie des données sur lesquelles le modèle final a été entraîné : l'écart avec la réalité ne mesure <strong>pas</strong> sa performance. Pour une évaluation honnête, voir le backtest plus bas. La vraie prévision hors échantillon est celle du dernier jour proposé.</span></div>
+    <div class="notice" id="dst" hidden><span class="ico">ℹ</span><span id="dst-text"></span></div>
+    <div class="notice err" id="error" hidden><span class="ico">!</span><span id="error-text"></span></div>
+    <div class="notice" id="rule" hidden><span class="ico">ℹ</span><span id="rule-text"></span></div>
+
+    <div class="card">
+      <div class="card-head">
+        <div><h3 id="day-title">Prévision du jour</h3><p class="sub" id="day-sub">Consommation nationale par demi-heure, en MW</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn ghost" id="day-table-toggle" type="button" aria-pressed="false">Vue tableau</button>
+        </div>
+      </div>
+      <div class="chips" id="day-chips" style="margin-bottom:10px"></div>
+      <div class="chart" id="day-chart"></div>
+      <div id="day-table" hidden></div>
+      <div class="stats" id="day-stats"></div>
+      <details>
+        <summary>Requête et réponse de l'API</summary>
+        <p class="sub" style="margin:10px 0 6px">Requête envoyée à <code>POST /predict</code> (abrégée) :</p>
+        <pre id="req-json">—</pre>
+        <p class="sub" style="margin:10px 0 6px">Réponse reçue (abrégée) :</p>
+        <pre id="res-json">—</pre>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <button class="btn ghost" id="copy" type="button">Copier la requête complète</button>
+          <button class="btn ghost" id="refuse" type="button">Tester la règle d'information</button>
+        </div>
+        <p class="sub" style="margin-top:8px">Le second bouton renvoie la même requête en demandant la prévision d'un jour déjà présent dans l'historique : l'API doit la refuser (HTTP 422), car la prévision du jour D ne peut utiliser que des données antérieures à D.</p>
+      </details>
+    </div>
+  </section>
+
+  <section id="resultats">
+    <h2>Résultats du backtest</h2>
+    <p class="section-lede">Cinq années de test successives (septembre 2021 – août 2026). Pour chaque année, les modèles sont réglés et entraînés uniquement sur le passé. Tous sont notés sur exactement les mêmes créneaux. Plus la barre est basse, meilleur est le modèle.</p>
+
+    <div class="filters">
+      <div class="chips" id="model-chips" role="group" aria-label="Modèles affichés"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div><h3>Erreur absolue moyenne (MAE) par année de test</h3><p class="sub">En MW. Le groupe « Moyenne » résume les cinq années.</p></div>
+        <button class="btn ghost" id="fold-table-toggle" type="button" aria-pressed="false">Vue tableau</button>
+      </div>
+      <div class="chart" id="fold-chart"></div>
+      <div id="fold-table" hidden></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div><h3>Où les modèles se trompent</h3><p class="sub">MAE en MW, cinq années cumulées.</p></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div class="tabs" role="tablist" aria-label="Découpage">
+            <button role="tab" id="tab-hour" aria-selected="true" type="button">Par heure</button>
+            <button role="tab" id="tab-weekday" aria-selected="false" type="button">Par jour</button>
+            <button role="tab" id="tab-season" aria-selected="false" type="button">Par saison</button>
+          </div>
+          <button class="btn ghost" id="break-table-toggle" type="button" aria-pressed="false">Vue tableau</button>
+        </div>
+      </div>
+      <div class="chart" id="break-chart"></div>
+      <div id="break-table" hidden></div>
+    </div>
+
+    <div class="card">
+      <h3>D'où vient l'avance du GRU ?</h3>
+      <p class="sub">MAE moyenne sur les cinq années, en MW. Le gradient boosting des premières étapes n'utilisait que des retards à la même heure ; le GRU lit en plus toute la journée de la veille.</p>
+      <div id="parity"></div>
+      <p class="sub" style="margin-top:14px">En donnant au gradient boosting la même information (les 48 valeurs de la veille), son erreur baisse nettement : <strong>plus de la moitié de l'avance initiale du GRU vient de l'information lue, pas de l'architecture</strong>. À information égale, le GRU reste meilleur sur les cinq années.</p>
+    </div>
+
+    <details class="card" id="full">
+      <summary>Tableau complet : tous les modèles, toutes les métriques</summary>
+      <div id="full-table" style="margin-top:12px"></div>
+    </details>
+  </section>
+
+  <section id="limites">
+    <h2>Ce que ces chiffres ne disent pas</h2>
+    <div class="card">
+      <ul class="clean">
+        <li><strong>Face à RTE, la comparaison n'est pas équivalente.</strong> Notre règle d'information donne accès à toute la veille jusqu'à 23h30 ; on ignore ce dont dispose la prévision de RTE et quand elle est faite. Un meilleur score ne prouve pas un meilleur modèle.</li>
+        <li><strong>Le modèle final a été entraîné sur tout le passé.</strong> Les prévisions de jours passés affichées plus haut sont donc « dans l'échantillon » ; seul le backtest ci-dessus est une mesure honnête.</li>
+        <li><strong>Données historiques consolidées, pas temps réel.</strong> En production, les données arrivent avec retard et peuvent être révisées : l'impact n'est pas mesuré.</li>
+        <li><strong>Pas de météo.</strong> La température n'est pas utilisée ; les erreurs sont plus fortes l'hiver, ce qui est compatible avec l'effet du chauffage, sans le démontrer.</li>
+        <li><strong>SARIMA est une version simplifiée</strong> (une seule saisonnalité, paramètres estimés sur 56 jours) : il ne faut pas en conclure que SARIMA est inadapté en général.</li>
+        <li><strong>Cinq années ne sont pas cinq expériences indépendantes</strong> : elles partagent l'essentiel de leur entraînement.</li>
+        <li><strong>Pas encore une vraie production</strong> : ni surveillance de la qualité, ni ré-entraînement planifié, ni détection de dérive, ni authentification.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>Architecture</h2>
+    <div class="steps">
+      <div class="step"><h4>Données</h4><p>RTE éCO2mix (Licence Ouverte), 2012–2026, grille de 30 minutes en UTC, trous non interpolés.</p></div>
+      <div class="step"><h4>Règle d'information</h4><p>La prévision du jour D n'utilise que des données antérieures à D ; des tests la vérifient à chaque étape.</p></div>
+      <div class="step"><h4>Modèles</h4><p>Baselines, gradient boosting, SARIMA, GRU (PyTorch), évalués par origine glissante sur cinq plis.</p></div>
+      <div class="step"><h4>API</h4><p>FastAPI : <code>/health</code> et <code>/predict</code>, modèle chargé une fois, historique refusé s'il contient le futur.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">Code, méthode et résultats détaillés : <a href="https://github.com/Alain27info/conso-forecast-france">github.com/Alain27info/conso-forecast-france</a> · Documentation interactive de l'API : <a href="/docs">/docs</a></div>
+</footer>
+<noscript><div class="wrap"><p>Cette page nécessite JavaScript. La documentation de l'API reste disponible sur <a href="/docs">/docs</a>.</p></div></noscript>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
