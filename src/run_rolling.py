@@ -51,11 +51,11 @@ def load_cached() -> pd.DataFrame:
     return pd.read_csv(CACHE, index_col=0, parse_dates=True).tz_convert("UTC")
 
 
-def metric_table(frame: pd.DataFrame, metric: str) -> pd.DataFrame:
+def metric_table(frame: pd.DataFrame, metric: str, models: list[str] = MODELS) -> pd.DataFrame:
     """One row per fold, one column per model; same rows for all models inside a fold."""
     rows = {}
     for name, part in frame.groupby("fold"):
-        scores = compare(part["truth"], {m: part[m] for m in MODELS})
+        scores = compare(part["truth"], {m: part[m] for m in models})
         rows[name] = scores[metric]
     return pd.DataFrame(rows).T
 
