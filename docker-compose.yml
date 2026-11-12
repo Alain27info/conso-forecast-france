@@ -1,0 +1,9 @@
+# Start everything:  docker compose up --build      (first build: data download + model training, about 10 minutes)
+# Then open http://127.0.0.1:8000/   (another port:  PORT=8010 docker compose up)
+name: conso-forecast      # fixed project name: otherwise Docker derives it from the folder name
+services:
+  api:
+    build: .
+    image: conso-forecast:latest
+    ports:
+      - "${PORT:-8000}:8000"

@@ -1,0 +1,26 @@
+# Keep the build context small and never send private or heavy files to Docker.
+.git
+.gitignore
+.venv
+.playwright-mcp
+__pycache__
+*.pyc
+.pytest_cache
+*.log
+
+# Private working files (never published, never in an image)
+docs
+CLAUDE.md
+PLAN.md
+conso-forecast.tar.gz
+
+# Produced inside the image (downloaded / trained at build time)
+data
+models
+
+# Not needed to run the service
+notebooks
+tests
+assets
+README.md
+requirements.txt

@@ -1,0 +1,9 @@
+# Dependencies needed to SERVE the model (used by the Docker image). Same pinned versions as requirements.txt.
+# Left out on purpose: matplotlib, scikit-learn, statsmodels, pytest, jupyter (only needed for experiments).
+pandas==3.1.1
+numpy==2.5.4
+torch==2.15.0
+fastapi==0.162.0
+uvicorn==0.54.0
+pydantic==2.14.3
+httpx==0.28.1

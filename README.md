@@ -2,7 +2,7 @@
 
 Prévision de la consommation électrique française à J+1, avec comparaison de plusieurs approches (baselines, arbres boostés, SARIMA, réseau récurrent) et mise à disposition du meilleur modèle via une API conteneurisée.
 
-> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles. Docker n'est pas encore fait.
+> **Statut : en cours de développement.** Les sections ci-dessous ne contiennent que des résultats réellement obtenus et reproductibles.
 
 ## Problème
 
@@ -136,6 +136,33 @@ curl -X POST http://127.0.0.1:8000/predict -H "Content-Type: application/json" -
 
 **Ce qui manque pour une vraie production** : surveillance de la qualité des prévisions (comparaison avec la consommation réalisée) et des données reçues, ré-entraînement planifié, détection de dérive (le niveau de consommation évolue), gestion des données **temps réel** de RTE qui peuvent différer des données définitives sur lesquelles le modèle est entraîné, authentification, limitation du débit, journalisation structurée, versionnement des modèles. Aucun de ces points n'est fait ici.
 
+## Docker
+
+```bash
+docker compose up --build        # première fois : ~3 à 5 min (téléchargement des données, entraînement du modèle)
+# puis ouvrir http://127.0.0.1:8000/          (autre port : PORT=8010 docker compose up)
+python tests/smoke_docker.py     # test de fumée sur le conteneur qui tourne : 9 vérifications
+docker compose down              # arrêter
+```
+
+L'image est construite **depuis un clone propre**, sans fichier local : elle télécharge les données RTE puis entraîne le modèle final (`python -m src.train_final`) pendant la construction. Le `Dockerfile` ordonne les couches pour que modifier la page ou le code de l'API ne relance pas l'entraînement.
+
+Mesures (Docker 29 sous Windows, moteur Linux) :
+
+| Mesure | Valeur |
+|---|---|
+| Construction à froid (téléchargement + entraînement) | 306 s ; 193 s avec les bibliothèques en cache |
+| Taille de l'image | 1,68 Go, dont 1,15 Go de bibliothèques (torch en version CPU : 209 Mo à télécharger, contre plusieurs Go pour la version GPU par défaut) ; données 32 Mo ; modèle 0,5 Mo |
+| Démarrage jusqu'à la première réponse de `/health` | 13 à 17 s |
+| Mémoire au repos | environ 196 Mo |
+| Utilisateur dans le conteneur | `app` (non-root) ; vérification de santé intégrée (état « healthy » vérifié) |
+
+- **Le modèle de l'image n'est pas bit à bit celui de l'étape précédente.** Les données et les graines sont les mêmes, mais les calculs flottants diffèrent entre Windows et Linux et l'une des trois graines a retenu 40 époques au lieu de 34. Sur 6 jours testés avec la même requête, les prévisions des deux modèles diffèrent en moyenne de 102 MW (de 50 à 171 MW selon le jour). Deux constructions successives de l'image donnent exactement le même entraînement.
+- **L'image dépend des données RTE au moment de la construction** : si RTE les révise ou les étend, le modèle (et sa date de fin d'entraînement) changeront. La construction exige une connexion Internet.
+- L'image contient les données (32 Mo, Licence Ouverte v2.0 d'Etalab, source RTE). Elle ne contient ni les documents de travail ni les fichiers privés (`.dockerignore` testé).
+- Ce n'est pas un déploiement de production : un seul processus, pas de HTTPS, pas d'authentification, pas de surveillance.
+- Tests : `tests/test_docker_files.py` vérifie sans Docker les règles du `Dockerfile` (utilisateur non-root, écoute sur toutes les interfaces, torch CPU, ordre des couches, pas de `chown -R`), le `.dockerignore`, la cohérence des versions de `requirements-api.txt` avec `requirements.txt`, et que l'API n'importe aucune bibliothèque absente de l'image.
+
 ## Limites
 
 - Pas de météo : la température, qui influence fortement la consommation (chauffage), n'est pas utilisée. Les erreurs sont plus fortes l'hiver, ce qui est compatible avec un effet du chauffage, mais ce lien n'est pas démontré ici.
@@ -177,7 +204,11 @@ conso-forecast/
 ├── src/             (données, variables, métriques, baselines, modèles, évaluation, service de prévision)
 ├── api/             (FastAPI : /health, /predict ; page web de démonstration dans api/static/)
 ├── assets/          (captures d'écran de la page web)
-├── tests/
+├── tests/           (tests unitaires et d'API ; smoke_docker.py = test de fumée d'un conteneur)
 ├── models/          (modèles sauvegardés, non versionnés)
-└── requirements.txt
+├── Dockerfile       (image de l'API : données + entraînement à la construction)
+├── docker-compose.yml
+├── .dockerignore
+├── requirements.txt       (toutes les expériences)
+└── requirements-api.txt   (le strict nécessaire pour servir le modèle)
 ```
